@@ -139,7 +139,7 @@ def parse_game_filename(file_name, queue, gid):
 def parse_game(f, queue, gid):
     """Parses an entire Jeopardy! game and extract individual clues."""
     print "Parsing game:", gid
-    txt = f.read().decode('cp1252')
+    txt = f.read().decode('iso-8859-1')
     html = lxml.html.fromstring(txt)
     # the title is in the format:
     # J! Archive - Show #XXXX, aired 2004-09-16
