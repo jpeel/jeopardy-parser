@@ -10,10 +10,11 @@
 # the jeopardy round and $400 base value in double jeopardy
 # this makes it easier to create a trainer that uses the values
 
-from __future__ import with_statement
+
 from glob import glob
 import argparse, re, os, sys, sqlite3
 import lxml.html
+import codecs
 
 class SqlQueue(object):
     def __init__(self, sql):
@@ -28,12 +29,12 @@ def get_eligible_filenames(directory):
 def main(args):
     """Loop thru all the games and parse them."""
     if not os.path.isdir(args.dir):
-        print "The specified folder is not a directory."
+        print("The specified folder is not a directory.")
         sys.exit(1)
     NUMBER_OF_FILES = len(os.listdir(args.dir))
     if args.num_of_files:
         NUMBER_OF_FILES = args.num_of_files
-    print "Parsing", NUMBER_OF_FILES, "files"
+    print("Parsing", NUMBER_OF_FILES, "files")
     sql = None
     if not args.stdout:
         sql = sqlite3.connect(args.database)
@@ -79,7 +80,7 @@ def main(args):
         # this option processes the files in parallel.
         # a pool of processes is created and fed the filenames to be processed.
         # the processes put the clues found into a queue to be processed by the main thread.
-        import multiprocessing, Queue, time
+        import multiprocessing, queue, time
         num_cpus = multiprocessing.cpu_count()
         # create the items to process
         items_to_process = [(file_name, int(gid_pat.findall(file_name)[0])) for file_name in get_eligible_filenames(args.dir)]
@@ -100,7 +101,7 @@ def main(args):
                     if not args.stdout:
                         insert(sql, item)
                     else:
-                        print item
+                        print(item)
             else:
                 time.sleep(.001)
         pool.close()
@@ -115,7 +116,7 @@ def main(args):
         sql.execute("CREATE INDEX index_clues_game_round on clues(game, round);")
         sql.execute("CREATE INDEX index_classifications on classifications(clue_id, category_id);")
         sql.commit()
-    print "All done"
+    print("All done")
 
 
 def parse_game_filename_multi(file_name, gid, counter, queue):
@@ -133,13 +134,15 @@ def f_init(q, counter):
     f.counter = counter
 
 def parse_game_filename(file_name, queue, gid):
-    with open(os.path.abspath(file_name)) as f:
+    #with open(os.path.abspath(file_name), 'rb') as f:
+    with codecs.open(os.path.abspath(file_name), encoding='utf-8') as f:
         parse_game(f, queue, gid)
 
 def parse_game(f, queue, gid):
     """Parses an entire Jeopardy! game and extract individual clues."""
-    print "Parsing game:", gid
-    txt = f.read().decode('iso-8859-1')
+    print("Parsing game:", gid)
+    txt = f.read()
+    #txt = f.read().decode('iso-8859-1')
     html = lxml.html.fromstring(txt)
     # the title is in the format:
     # J! Archive - Show #XXXX, aired 2004-09-16
@@ -148,47 +151,47 @@ def parse_game(f, queue, gid):
     if airdate_search:
         airdate = airdate_search[0].text.split()[-1]
     else:
-        print "no airdate. skipping."
+        print("no airdate. skipping.")
         return
 
     jeopardy_round_search = html.xpath('//div[@id = "jeopardy_round"]')
     if not jeopardy_round_search:
-        print "no jeopardy round. skipping."
+        print("no jeopardy round. skipping.")
         return
     parse_round(jeopardy_round_search[0], queue, 1, gid, airdate)
 
     double_jeopardy_round_search = html.xpath('//div[@id = "double_jeopardy_round"]')
     if not double_jeopardy_round_search:
-        print "no double jeopardy round. skipping."
+        print("no double jeopardy round. skipping.")
         return
     parse_round(double_jeopardy_round_search[0], queue, 2, gid, airdate)
 
     final_jeopardy_round_search = html.xpath('//div[@id = "final_jeopardy_round"]')
     if not final_jeopardy_round_search:
-        print "no final jeopardy round. skipping."
+        print("no final jeopardy round. skipping.")
         return
     final_jeopardy_round = final_jeopardy_round_search[0]
     category_search = final_jeopardy_round.xpath('.//td[@class = "category_name"]')
     if not category_search:
-        print "couldn't find final jeopardy category. skipping."
+        print("couldn't find final jeopardy category. skipping.")
         return
     category = category_search[0].text_content()
     text_search = final_jeopardy_round.xpath('.//td[@class = "clue_text"]')
     if not text_search:
-        print "couldn't find final jeopardy text. skipping."
+        print("couldn't find final jeopardy text. skipping.")
         return
     text = text_search[0].text_content()
 
     answer_search = final_jeopardy_round.xpath(".//div[@onmouseover]")
     if not answer_search:
-        print "couldn't find final jeopardy answer. skipping."
+        print("couldn't find final jeopardy answer. skipping.")
         return
 
     onmouseover = answer_search[0].get("onmouseover")
     onmouseover_html = lxml.html.fromstring(onmouseover)
     onmouseover_search = onmouseover_html.xpath('.//em')
     if not onmouseover_search:
-        print "couldn't find final jeopardy answer. skipping."
+        print("couldn't find final jeopardy answer. skipping.")
         return
     answer = onmouseover_search[0].text_content()
 
@@ -213,27 +216,27 @@ def parse_round(r, queue, rnd, gid, airdate):
             value_search = a.xpath('.//td[contains(@class, "clue_value")]')
             if not value_search:
                 a_html = lxml.html.tostring(a)
-                print "no value:", a_html
+                print("no value:", a_html)
                 continue
             value_found = value_search[0].text_content().strip(' ')
             daily_double = int(value_found.startswith('DD:'))
             text_search = a.xpath('.//td[@class = "clue_text"]')
             if not text_search:
                 a_html = lxml.html.tostring(a)
-                print "no text:", a_html
+                print("no text:", a_html)
                 continue
             text = text_search[0].text_content()
             answer_search = a.xpath(".//div[@onmouseover]")
             if not answer_search:
                 a_html = lxml.html.tostring(a)
-                print "no answer:", a_html
+                print("no answer:", a_html)
                 continue
             onmouseover = answer_search[0].get("onmouseover")
             onmouseover_html = lxml.html.fromstring(onmouseover)
             onmouseover_search = onmouseover_html.xpath('.//em')
             if not onmouseover_search:
                 onmouseover_decoded = lxml.html.tostring(lxml.html.fromstring(onmouseover))
-                print "no onmouseover:",onmouseover_decoded
+                print("no onmouseover:",onmouseover_decoded)
                 continue
             answer = onmouseover_search[0].text_content()
             queue.put([gid, airdate, rnd, categories[x], value, text, answer, daily_double])
@@ -258,7 +261,7 @@ def insert(sql, clue):
     if "\\\"" in clue[6]:
         clue[6] = clue[6].replace("\\\"", "\"")
     if not sql:
-        print clue
+        print(clue)
         return
     sql.execute("INSERT OR IGNORE INTO airdates VALUES(?, ?);", (clue[0], clue[1], ))
     sql.execute("INSERT OR IGNORE INTO categories(category) VALUES(?);", (clue[3], ))
